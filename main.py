@@ -6,7 +6,7 @@ import gspread
 from google.oauth2.service_account import Credentials
 from playwright.async_api import async_playwright
 
-# 1. Calcula o código do mês no formato do Skyscanner (ex: '2610' para Out/2026)
+# 1. Calcula os 3 próximos meses no formato do Skyscanner (ex: '2610' para Out/2026)
 def obter_tres_proximos_meses():
     hoje = datetime.now()
     meses_info = []
@@ -26,7 +26,7 @@ def obter_tres_proximos_meses():
         
     return meses_info
 
-# 2. Conecta ao Google Sheets com tratamento de erro de credenciais
+# 2. Conecta ao Google Sheets
 def conectar_google_sheets():
     scopes = [
         "https://www.googleapis.com/auth/spreadsheets",
@@ -35,35 +35,36 @@ def conectar_google_sheets():
     
     gcp_key = os.environ.get("GCP_SA_KEY")
     if not gcp_key:
-        raise ValueError("ERRO CRÍTICO: O Secret 'GCP_SA_KEY' não foi encontrado ou está vazio neste repositório!")
+        raise ValueError("Secret 'GCP_SA_KEY' não foi encontrado!")
         
     try:
         sa_info = json.loads(gcp_key)
     except json.JSONDecodeError as e:
-        raise ValueError("ERRO CRÍTICO: O Secret 'GCP_SA_KEY' não é um JSON válido. Verifique se copiou todo o conteúdo do arquivo .json.") from e
+        raise ValueError("Secret 'GCP_SA_KEY' não é um JSON válido.") from e
 
     creds = Credentials.from_service_account_info(sa_info, scopes=scopes)
     client = gspread.authorize(creds)
     
     sheet_id = os.environ.get("SHEET_ID")
     if not sheet_id:
-        raise ValueError("ERRO CRÍTICO: O Secret 'SHEET_ID' não foi encontrado neste repositório!")
+        raise ValueError("Secret 'SHEET_ID' não foi encontrado!")
         
     return client.open_by_key(sheet_id).sheet1
 
-# 3. Verifica se a chave na célula G1 da planilha está como LIGADO
+# 3. Verifica e inicializa o status na célula G1 se necessário
 def verificar_status_ativo(sheet):
     try:
         status = sheet.acell('G1').value
-        if status and status.strip().upper() == "LIGADO":
+        if not status or status.strip() == "":
+            sheet.update_acell('F1', 'Status Automação:')
+            sheet.update_acell('G1', 'LIGADO')
             return True
-        print(f"Status na célula G1 é '{status}'. Apenas 'LIGADO' executa a busca.")
-        return False
+        return status.strip().upper() == "LIGADO"
     except Exception as e:
         print(f"Aviso ao ler célula de status: {e}. Executando por padrão.")
         return True
 
-# 4. Extração dos dados no Skyscanner
+# 4. Extrai os preços do mês no Skyscanner
 async def extrair_voos_mes(page, origem, destino, label_mes, oym):
     url = f"https://www.skyscanner.com.br/transporte/passagens-aereas/{origem}/{destino}/?adultsv2=1&cabinclass=economy&childrenv2=&ref=home&rtn=0&outboundaltsenabled=false&inboundaltsenabled=false&oym={oym}&selectedoday=01"
     
@@ -96,9 +97,8 @@ async def extrair_voos_mes(page, origem, destino, label_mes, oym):
 async def main():
     sheet = conectar_google_sheets()
     
-    # Valida botão LIGADO/DESLIGADO na planilha
     if not verificar_status_ativo(sheet):
-        print("Automação desativada na planilha (célula G1 diferente de 'LIGADO'). Finalizando sem buscar.")
+        print("Automação está DESLIGADA na planilha (G1 != 'LIGADO').")
         return
 
     origem = "bsb"   # Brasília
@@ -123,15 +123,16 @@ async def main():
         await browser.close()
     
     if todos_os_dados:
-        if not sheet.get_all_values():
-            sheet.append_row(["Data da Coleta", "Mês Referência", "Dia/Data Voo", "Preço", "Duração"])
+        # Cria o cabeçalho se a célula A1 estiver vazia
+        if not sheet.acell('A1').value:
+            sheet.insert_row(["Data da Coleta", "Mês Referência", "Dia/Data Voo", "Preço", "Duração"], index=1)
             
         for linha in todos_os_dados:
             sheet.append_row(linha)
             
         print(f"Sucesso! {len(todos_os_dados)} registros gravados na planilha.")
     else:
-        print("Nenhum preço encontrado nas buscas do período.")
+        print("Nenhum preço encontrado nesta execução.")
 
 if __name__ == "__main__":
     asyncio.run(main())
