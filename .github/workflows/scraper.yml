@@ -12,10 +12,10 @@ jobs:
 
     steps:
       - name: Baixar Código do Repositório
-        uses: actions/checkout@v4.2.2
+        uses: actions/checkout@v4
 
       - name: Configurar Python
-        uses: actions/setup-python@v5.4.0
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
