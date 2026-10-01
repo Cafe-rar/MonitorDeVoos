@@ -1,0 +1,32 @@
+name: Executar Scraper Skyscanner
+
+on:
+  schedule:
+    # 06:00, 12:00 e 18:00 (Horário de Brasília)
+    - cron: '0 9,15,21 * * *'
+  workflow_dispatch: # Permite execução manual
+
+jobs:
+  rodar-automacao:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Baixar Código do Repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Instalar Dependências
+        run: |
+          python -m pip install --upgrade pip
+          pip install playwright gspread google-auth
+          playwright install --with-deps chromium
+
+      - name: Executar Script Python
+        env:
+          GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
+          SHEET_ID: ${{ secrets.SHEET_ID }}
+        run: python main.py
